@@ -1,0 +1,68 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use 5.010;
+use Carp;
+use Getopt::Long;
+use Data::Dumper;
+use IO::Select;
+
+use Net::DNS::Resolver;
+
+main();
+
+sub main {
+    my $help = 0;
+    my $hostname;
+    my $type = "A";
+    my $check_http;
+    my $options = GetOptions(
+        "hostname=s" => \$hostname,
+        "type=s" => \$type,
+        "check_http=s" => \$check_http,
+        "help" => \$help,
+    );
+    if (!defined $hostname or !defined $check_http) {
+        warn "You must specify -hostname and -check_http";
+        pod2usage({ -verbose => 2 });
+    }
+    if ($help) {
+        pod2usage({ -verbose => 2 });
+    }
+    if (!-x $check_http) {
+        warn "Option check_http must be executable";
+        pod2usage({ -verbose => 1 });
+    }
+
+    my $resolver = Net::DNS::Resolver->new;
+    my $res = $resolver->query($hostname, $type);
+    my @answer = $res->answer;
+    #print Dumper [$resolver, $res, \@answer];
+    for my $k (@answer) {
+        print $k->rdatastr, $/;
+    }
+    # Hash
+    my %info = ();
+    for my $k (@answer) {
+        my $ipaddr = $k->rdatastr;
+        my $cmd = "$check_http";
+        my @args = ("-I", $ipaddr, @ARGV);
+        print STDERR "CMD: $cmd @args\n";
+        open my $fh, "-|", $cmd, @args or croak "Cannot fork process: $!";
+        $info{$k} = { pipe => $fh, ipaddr => $ipaddr, };
+    }
+    for my $k (keys %info) {
+        my $pipe = $info{$k}->{pipe};
+        my @output = ();
+        while (my $line = <$pipe>) {
+            push @output, $line;
+        }
+        $info{$k}->{output} = \@output;
+        close $pipe;
+        delete $info{$k}->{pipe};
+    }
+    
+    print Dumper \%info;
+}
+
