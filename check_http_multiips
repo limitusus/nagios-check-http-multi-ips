@@ -7,8 +7,19 @@ use Carp;
 use Getopt::Long;
 use Data::Dumper;
 use IO::Select;
+use Pod::Usage;
 
 use Net::DNS::Resolver;
+use Readonly;
+
+Readonly my $OK => 0;
+Readonly my $WARNING => 1;
+Readonly my $CRITICAL => 2;
+Readonly my $UNKNOWN => 3;
+
+
+my $debug = 0;
+
 
 main();
 
@@ -17,17 +28,20 @@ sub main {
     my $hostname;
     my $type = "A";
     my $check_http;
+    my ($warning, $critical) = (1, 1);
     my $options = GetOptions(
         "hostname=s" => \$hostname,
         "type=s" => \$type,
         "check_http=s" => \$check_http,
+        "warning=i" => \$warning,
+        "critical=i" => \$critical,
         "help" => \$help,
     );
-    if (!defined $hostname or !defined $check_http) {
-        warn "You must specify -hostname and -check_http";
+    if ($help) {
         pod2usage({ -verbose => 2 });
     }
-    if ($help) {
+    if (!defined $hostname or !defined $check_http) {
+        warn "You must specify -hostname and -check_http";
         pod2usage({ -verbose => 2 });
     }
     if (!-x $check_http) {
@@ -38,9 +52,11 @@ sub main {
     my $resolver = Net::DNS::Resolver->new;
     my $res = $resolver->query($hostname, $type);
     my @answer = $res->answer;
-    #print Dumper [$resolver, $res, \@answer];
-    for my $k (@answer) {
-        print $k->rdatastr, $/;
+    if ($debug) {
+        #print Dumper [$resolver, $res, \@answer];
+        for my $k (@answer) {
+            print $k->rdatastr, $/;
+        }
     }
     # Hash
     my %info = ();
@@ -48,7 +64,9 @@ sub main {
         my $ipaddr = $k->rdatastr;
         my $cmd = "$check_http";
         my @args = ("-I", $ipaddr, @ARGV);
-        print STDERR "CMD: $cmd @args\n";
+        if ($debug) {
+            print STDERR "CMD: $cmd @args\n";
+        }
         open my $fh, "-|", $cmd, @args or croak "Cannot fork process: $!";
         $info{$k} = { pipe => $fh, ipaddr => $ipaddr, };
     }
@@ -63,6 +81,69 @@ sub main {
         delete $info{$k}->{pipe};
     }
     
-    print Dumper \%info;
+    if ($debug) {
+        print STDERR Dumper \%info;
+    }
+    map {
+        my $key = $_;
+        my $output = $info{$key}->{output};
+        my $output_firstline = $output->[0];
+        chomp $output_firstline;
+        my $output_firstline_copy = $output_firstline;
+        $output_firstline =~ s/HTTP\/\d+\.\d+\s(\d+)\s/$1/;
+        if (!defined $output_firstline) {
+            $info{$key}->{result} = $output_firstline_copy;
+        } else {
+            $info{$key}->{result} = "*** OK ***";
+        }
+    } (keys %info);
+    my %final_status = ( failure_count => 0, status => $OK, statusline => "*** OK ***" );
+    for my $key (keys %info) {
+        my $output = $info{$key};
+        my $result = $output->{result};
+        if ($result ne "*** OK ***") {
+            if($final_status{failure_count} == 0) {
+                $final_status{statusline} = $result;
+            } else {
+                $final_status{statusline} .= $result;
+            }
+            $final_status{failure_count}++;
+        }
+    }
+    # Finish
+    if ($debug) {
+        print STDERR Dumper(\%final_status);
+    }
+    # Set status
+    if ($final_status{failure_count} >= $warning) {
+        $final_status{status} = $WARNING;
+    }
+    if ($final_status{failure_count} >= $critical) {
+        $final_status{status} = $CRITICAL;
+    }
+    print $final_status{statusline} . "\n";
+    exit $final_status{status};
 }
+
+__END__
+
+=head1 check_http_multiips
+
+Check HTTP service with multiple IP addresses.
+
+=head2 SYNOPSIS
+
+  check_http_multiips -hostname example.com -check-http /usr/local/nagios/libexec/check_http -- -A USERAGENT
+
+=head2 OPTINOS
+
+=over 8
+
+=item B<-hostname>
+
+=item B<-check-http>
+
+=back
+
+=pod
 
