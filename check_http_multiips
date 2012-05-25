@@ -121,6 +121,12 @@ sub main {
     if ($final_status{failure_count} >= $critical) {
         $final_status{status} = $CRITICAL;
     }
+    # Pretty statusline
+    if ($final_status{status} == $OK) {
+        my $total = scalar(keys %info);
+        my $failures = $final_status{failure_count};
+        $final_status{statusline} = sprintf "HTTP OK: %d/%d", $total - $failures, $total;
+    }
     print $final_status{statusline} . "\n";
     return $final_status{status};
 }
