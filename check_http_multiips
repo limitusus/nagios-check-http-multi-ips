@@ -58,6 +58,10 @@ sub main {
 
     my $resolver = Net::DNS::Resolver->new;
     my $res = $resolver->query($hostname, $type);
+    if (!defined $res) {
+        print "NG: Name not resolved\n";
+        return $CRITICAL;
+    }
     my @answer = $res->answer;
     if ($debug) {
         #print Dumper [$resolver, $res, \@answer];
