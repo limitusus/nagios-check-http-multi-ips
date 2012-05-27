@@ -48,6 +48,13 @@ sub main {
         warn "Option check_http must be executable";
         pod2usage({ -verbose => 1 });
     }
+    if ($debug) {
+        print STDERR "Parameters :\n";
+        print STDERR "hostname: $hostname\n";
+        print STDERR "type: $type\n";
+        print STDERR "warning/critical: $warning/$critical\n";
+        print STDERR "check-http: $check_http\n";
+    }
 
     my $resolver = Net::DNS::Resolver->new;
     my $res = $resolver->query($hostname, $type);
@@ -91,23 +98,29 @@ sub main {
         chomp $output_firstline;
         my $output_firstline_copy = $output_firstline;
         $output_firstline =~ s/HTTP\/\d+\.\d+\s(\d+)\s/$1/;
-        if (!defined $output_firstline) {
+        my $match = $output_firstline_copy =~ /HTTP OK:/;
+        #print $output_firstline, $/;
+        if (!$match) {
             $info{$key}->{result} = $output_firstline_copy;
         } else {
             $info{$key}->{result} = "*** OK ***";
         }
     } (keys %info);
-    my %final_status = ( failure_count => 0, status => $OK, statusline => "*** OK ***" );
+    my %final_status = ( failure_count => 0, status => $OK, statusline => "*** OK ***", ipaddress => [], );
     for my $key (keys %info) {
         my $output = $info{$key};
         my $result = $output->{result};
+        my $ipaddress = $info{$key}->{ipaddr};
         if ($result ne "*** OK ***") {
+            push $final_status{ipaddress}, "$ipaddress:$result";
             if($final_status{failure_count} == 0) {
                 $final_status{statusline} = $result;
             } else {
                 $final_status{statusline} .= $result;
             }
             $final_status{failure_count}++;
+        } else {
+            push @{$final_status{ipaddress}}, "$ipaddress:OK";
         }
     }
     # Finish
@@ -122,12 +135,14 @@ sub main {
         $final_status{status} = $CRITICAL;
     }
     # Pretty statusline
+    my $total = scalar(keys %info);
+    my $failures = $final_status{failure_count};
     if ($final_status{status} == $OK) {
-        my $total = scalar(keys %info);
-        my $failures = $final_status{failure_count};
         $final_status{statusline} = sprintf "HTTP OK: %d/%d", $total - $failures, $total;
+    } else {
+        $final_status{statusline} = sprintf "NOT OK: %d/%d", $total - $failures, $total;
     }
-    print $final_status{statusline} . "\n";
+    print $final_status{statusline} . " " . join(", ", @{$final_status{ipaddress}}) . "\n";
     return $final_status{status};
 }
 
@@ -181,7 +196,7 @@ If you place C<--> inside the command-line options, options before it will be pa
 
 If you want to check www.google.com's A records with P06C UserAgent:
 
-    check_http_multiips -hostname www.google.co.jp -check-http /usr/local/nagios/libexec/check_http -w 2 -c 4 -- -A 'DoCoMo/2.0 P06C(c500;TB;W24H16)'
+    check_http_multiips -hostname www.google.co.jp -check-http /usr/local/nagios/libexec/check_http -warning 2 -critical 4 -- -A 'DoCoMo/2.0 P06C(c500;TB;W24H16)'
 
 =head3 EXAMPLE of perlbrew and nagios
 
@@ -190,7 +205,7 @@ If you set up Perl environment with perlbrew, you can use a command definition l
 
     define command{
             command_name    check_http_multi
-            command_line    PATH=/home/nagios/perl5/perlbrew/bin:/home/nagios/perl5/perlbrew/perls/perl-5.15.9/bin /home/nagios/git/nagios-check-http-multi-ips/check_http_multiips -hostname $HOSTADDRESS$ -check-http $USER1$/check_http -w 1 -c 4 -- $ARG1$
+            command_line    PATH=/home/nagios/perl5/perlbrew/bin:/home/nagios/perl5/perlbrew/perls/perl-5.15.9/bin /home/nagios/git/nagios-check-http-multi-ips/check_http_multiips -hostname $HOSTADDRESS$ -check-http $USER1$/check_http -warning 1 -critical 4 -- $ARG1$
     }
 
 =head1 COPYRIGHT
