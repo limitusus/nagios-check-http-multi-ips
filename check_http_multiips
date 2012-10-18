@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use 5.010;
+use 5.10.0;
 use Carp;
 use Getopt::Long;
 use Data::Dumper;
@@ -28,6 +28,7 @@ sub main {
     my $hostname;
     my $type = "A";
     my $check_http;
+    my $ssl;
     my ($warning, $critical) = (1, 1);
     my $options = GetOptions(
         "hostname=s" => \$hostname,
@@ -35,6 +36,8 @@ sub main {
         "check-http=s" => \$check_http,
         "warning=i" => \$warning,
         "critical=i" => \$critical,
+        "ssl" => \$ssl,
+        "debug" => \$debug,
         "help" => \$help,
     );
     if ($help) {
@@ -62,7 +65,7 @@ sub main {
         print "NG: Name not resolved\n";
         return $CRITICAL;
     }
-    my @answer = $res->answer;
+    my @answer = grep { $_->type eq "A" } $res->answer;
     if ($debug) {
         #print Dumper [$resolver, $res, \@answer];
         for my $k (@answer) {
@@ -75,6 +78,7 @@ sub main {
         my $ipaddr = $k->rdatastr;
         my $cmd = "$check_http";
         my @args = ("-I", $ipaddr, @ARGV);
+        unshift @args, "--ssl" if $ssl;
         if ($debug) {
             print STDERR "CMD: $cmd @args\n";
         }
@@ -116,7 +120,7 @@ sub main {
         my $result = $output->{result};
         my $ipaddress = $info{$key}->{ipaddr};
         if ($result ne "*** OK ***") {
-            push $final_status{ipaddress}, "$ipaddress:$result";
+            push @{$final_status{ipaddress}}, "$ipaddress:$result";
             if($final_status{failure_count} == 0) {
                 $final_status{statusline} = $result;
             } else {
