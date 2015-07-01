@@ -78,6 +78,7 @@ sub main {
         my $ipaddr = $k->rdatastr;
         my $cmd = "$check_http";
         my @args = ("-I", $ipaddr, @ARGV);
+        unshift @args, "-H $hostname";
         unshift @args, "--ssl" if $ssl;
         if ($debug) {
             print STDERR "CMD: $cmd @args\n";
