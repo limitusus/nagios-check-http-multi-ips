@@ -65,7 +65,7 @@ sub main {
         print "NG: Name not resolved\n";
         return $CRITICAL;
     }
-    my @answer = grep { $_->type eq "A" } $res->answer;
+    my @answer = grep { $_->type eq $type } $res->answer;
     if ($debug) {
         #print Dumper [$resolver, $res, \@answer];
         for my $k (@answer) {
